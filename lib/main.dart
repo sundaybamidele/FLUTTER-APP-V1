@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
-import 'database_helper.dart';
 
 void main() {
   runApp(const MyApp());
 }
 
 class BlogItem {
-  int? id;
+  static int _counter = 0;
+  int id;
   String title;
   DateTime date;
   String body;
@@ -21,7 +21,6 @@ class BlogItem {
   bool deleted;
 
   BlogItem({
-    this.id,
     required this.title,
     required this.date,
     required this.body,
@@ -29,7 +28,9 @@ class BlogItem {
     required this.quantity,
     required this.status,
     this.deleted = false,
-  });
+  }) : id = _counter++;
+
+  // Other methods and properties...
 }
 
 class MyApp extends StatelessWidget {
@@ -55,21 +56,14 @@ class BlogListScreen extends StatefulWidget {
 }
 
 class _BlogListScreenState extends State<BlogListScreen> {
-  late List<BlogItem> _blogItems;
+  final List<BlogItem> _blogItems = [];
   late List<BlogItem> _filteredItems;
   final TextEditingController _searchController = TextEditingController();
-  final DatabaseHelper _databaseHelper = DatabaseHelper();
 
   @override
   void initState() {
     super.initState();
-    _loadBlogItems();
-  }
-
-  Future<void> _loadBlogItems() async {
-    _blogItems = await _databaseHelper.getBlogItems();
     _filteredItems = List.from(_blogItems);
-    setState(() {});
   }
 
   @override
@@ -119,10 +113,10 @@ class _BlogListScreenState extends State<BlogListScreen> {
             Expanded(
               child: TabBarView(
                 children: [
-                  _buildTab(0),
-                  _buildTab(1),
-                  _buildTab(2),
-                  _buildTab(3),
+                  _buildTab(_blogItems, 0),
+                  _buildTab(_blogItems, 1),
+                  _buildTab(_blogItems, 2),
+                  _buildTab(_blogItems, 3),
                 ],
               ),
             ),
@@ -137,8 +131,10 @@ class _BlogListScreenState extends State<BlogListScreen> {
               ),
             );
             if (newBlogItem != null) {
-              await _databaseHelper.insertBlogItem(newBlogItem);
-              _loadBlogItems();
+              setState(() {
+                _blogItems.add(newBlogItem);
+                _filteredItems = List.from(_blogItems);
+              });
             }
           },
           child: const Icon(Icons.add),
@@ -147,20 +143,18 @@ class _BlogListScreenState extends State<BlogListScreen> {
     );
   }
 
-  Widget _buildTab(int tabIndex) {
+  Widget _buildTab(List<BlogItem> items, int tabIndex) {
     List<BlogItem> filteredItems = [];
     if (tabIndex == 0) {
-      filteredItems = _blogItems;
+      filteredItems = items;
     } else if (tabIndex == 1) {
-      filteredItems = _blogItems
-          .where((item) => item.quantity > 0 && !item.deleted)
-          .toList();
+      filteredItems =
+          items.where((item) => item.quantity > 0 && !item.deleted).toList();
     } else if (tabIndex == 2) {
-      filteredItems = _blogItems
-          .where((item) => item.quantity == 0 && !item.deleted)
-          .toList();
+      filteredItems =
+          items.where((item) => item.quantity == 0 && !item.deleted).toList();
     } else if (tabIndex == 3) {
-      filteredItems = _blogItems.where((item) => item.deleted).toList();
+      filteredItems = items.where((item) => item.deleted).toList();
     }
 
     return ListView.builder(
@@ -168,7 +162,7 @@ class _BlogListScreenState extends State<BlogListScreen> {
       itemBuilder: (context, index) {
         final blogItem = filteredItems[index];
         return ListTile(
-          title: Text(blogItem.title),
+          title: Text('${blogItem.id}. ${blogItem.title}'),
           subtitle: Text(DateFormat('yyyy-MM-dd').format(blogItem.date)),
           onTap: () async {
             if (!blogItem.deleted) {
@@ -179,8 +173,10 @@ class _BlogListScreenState extends State<BlogListScreen> {
                 ),
               );
               if (updatedBlogItem != null) {
-                await _databaseHelper.updateBlogItem(updatedBlogItem);
-                _loadBlogItems();
+                setState(() {
+                  items[index] = updatedBlogItem;
+                  _filteredItems = List.from(_blogItems);
+                });
               }
             }
           },
@@ -211,8 +207,10 @@ class _BlogListScreenState extends State<BlogListScreen> {
                           ),
                         );
                         if (updatedBlogItem != null) {
-                          await _databaseHelper.updateBlogItem(updatedBlogItem);
-                          _loadBlogItems();
+                          setState(() {
+                            items[index] = updatedBlogItem;
+                            _filteredItems = List.from(_blogItems);
+                          });
                         }
                       },
                     ),
@@ -224,9 +222,11 @@ class _BlogListScreenState extends State<BlogListScreen> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete),
-                      onPressed: () async {
-                        await _databaseHelper.deleteBlogItem(blogItem.id!);
-                        _loadBlogItems();
+                      onPressed: () {
+                        setState(() {
+                          blogItem.deleted = true;
+                          _filteredItems = List.from(_blogItems);
+                        });
                       },
                     ),
                   ],
@@ -236,17 +236,19 @@ class _BlogListScreenState extends State<BlogListScreen> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.restore),
-                      onPressed: () async {
-                        blogItem.deleted = false;
-                        await _databaseHelper.updateBlogItem(blogItem);
-                        _loadBlogItems();
+                      onPressed: () {
+                        setState(() {
+                          blogItem.deleted = false;
+                          _filteredItems = List.from(_blogItems);
+                        });
                       },
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete),
-                      onPressed: () async {
-                        await _databaseHelper.deleteBlogItem(blogItem.id!);
-                        _loadBlogItems();
+                      onPressed: () {
+                        setState(() {
+                          items.removeAt(index);
+                        });
                       },
                     ),
                   ],
@@ -295,15 +297,14 @@ class BlogSearchDelegate extends SearchDelegate<BlogItem> {
       icon: const Icon(Icons.arrow_back),
       onPressed: () {
         close(
-          context,
-          BlogItem(
-            title: '',
-            date: DateTime.now(),
-            body: '',
-            quantity: 0,
-            status: '',
-          ),
-        );
+            context,
+            BlogItem(
+              title: '',
+              date: DateTime.now(),
+              body: '',
+              quantity: 0,
+              status: '',
+            ));
       },
     );
   }
@@ -329,7 +330,7 @@ class BlogSearchDelegate extends SearchDelegate<BlogItem> {
       itemBuilder: (context, index) {
         final blogItem = filteredItems[index];
         return ListTile(
-          title: Text(blogItem.title),
+          title: Text('${blogItem.id}. ${blogItem.title}'),
           subtitle: Text(DateFormat('yyyy-MM-dd').format(blogItem.date)),
           onTap: () {
             close(context, blogItem);
@@ -414,24 +415,20 @@ class _AddEditBlogItemScreenState extends State<AddEditBlogItemScreen> {
             ),
             const SizedBox(height: 16.0),
             ElevatedButton(
-              onPressed: () async {
+              onPressed: () {
                 if (_titleController.text.isNotEmpty &&
                     _bodyController.text.isNotEmpty) {
-                  final blogItem = BlogItem(
-                    title: _titleController.text,
-                    date: DateTime.now(),
-                    body: _bodyController.text,
-                    imageUrl: _imageFile?.path,
-                    quantity: _quantity,
-                    status: _status,
+                  Navigator.pop(
+                    context,
+                    BlogItem(
+                      title: _titleController.text,
+                      date: DateTime.now(),
+                      body: _bodyController.text,
+                      imageUrl: _imageFile?.path,
+                      quantity: _quantity,
+                      status: _status,
+                    ),
                   );
-                  if (widget.blogItem == null) {
-                    await _databaseHelper.insertBlogItem(blogItem);
-                  } else {
-                    blogItem.id = widget.blogItem!.id;
-                    await _databaseHelper.updateBlogItem(blogItem);
-                  }
-                  Navigator.pop(context);
                 } else {
                   // Show error message or handle empty fields
                 }
@@ -445,35 +442,40 @@ class _AddEditBlogItemScreenState extends State<AddEditBlogItemScreen> {
   }
 }
 
-class BlogItemScreen extends StatelessWidget {
+class BlogItemScreen extends StatefulWidget {
   final BlogItem blogItem;
 
   const BlogItemScreen({Key? key, required this.blogItem}) : super(key: key);
 
   @override
+  _BlogItemScreenState createState() => _BlogItemScreenState();
+}
+
+class _BlogItemScreenState extends State<BlogItemScreen> {
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(blogItem.title),
+        title: Text('${widget.blogItem.id}. ${widget.blogItem.title}'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(DateFormat('yyyy-MM-dd').format(blogItem.date)),
+            Text(DateFormat('yyyy-MM-dd').format(widget.blogItem.date)),
             const SizedBox(height: 16.0),
-            Text(blogItem.body),
+            Text(widget.blogItem.body),
             const SizedBox(height: 16.0),
-            if (blogItem.imageUrl != null)
+            if (widget.blogItem.imageUrl != null)
               Image.network(
-                blogItem.imageUrl!,
+                widget.blogItem.imageUrl!,
                 fit: BoxFit.cover,
                 height: 200,
               ),
             const SizedBox(height: 16.0),
-            Text('Quantity: ${blogItem.quantity}'),
-            Text('Status: ${blogItem.status}'),
+            Text('Quantity: ${widget.blogItem.quantity}'),
+            Text('Status: ${widget.blogItem.status}'),
           ],
         ),
       ),
